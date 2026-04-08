@@ -63,7 +63,6 @@ TICKETS = [
 def get_task_config(task_id: str, seed: int = 42) -> dict:
     rng = random.Random(seed)
     ticket = rng.choice(TICKETS)
-
     if task_id == "easy":
         return {
             "task_id": task_id,
@@ -99,6 +98,8 @@ TASK_LIST = [
         "difficulty": "easy",
         "max_steps": 5,
         "grader": True,
+        "grader_endpoint": "/grade/easy",
+        "description": "Classify support ticket by category and priority",
     },
     {
         "id": "medium",
@@ -106,6 +107,8 @@ TASK_LIST = [
         "difficulty": "medium",
         "max_steps": 8,
         "grader": True,
+        "grader_endpoint": "/grade/medium",
+        "description": "Route ticket to correct team and assign SLA tier",
     },
     {
         "id": "hard",
@@ -113,5 +116,7 @@ TASK_LIST = [
         "difficulty": "hard",
         "max_steps": 12,
         "grader": True,
+        "grader_endpoint": "/grade/hard",
+        "description": "Classify, route, summarize, and draft initial response",
     },
 ]
