@@ -50,7 +50,6 @@ def call_grade(task_id: str, submission: dict, ground_truth: dict) -> float:
 def agent_step(observation: str, task_id: str, step: int, info: dict) -> dict:
     """Use LLM to decide next action based on observation."""
     required_fields = info.get("required_fields", ["category", "priority"])
-
     if task_id == "easy":
         fields_hint = "category (authentication/billing/bug/how-to/integration) and priority (low/medium/high/critical)"
     elif task_id == "medium":
@@ -61,8 +60,8 @@ def agent_step(observation: str, task_id: str, step: int, info: dict) -> dict:
     system_prompt = (
         "You are a customer support triage expert. Analyze the support ticket and return a JSON action.\n"
         "Actions available:\n"
-        "  - {\"action\": \"set_field\", \"parameters\": {\"field\": \"<field_name>\", \"value\": \"<value>\"}} - set a field\n"
-        "  - {\"action\": \"submit\", \"parameters\": {<all fields>}} - submit final answer\n"
+        "  - {\"action\": \"set_field\", \"parameters\": {\"field\": \"\", \"value\": \"\"}} - set a field\n"
+        "  - {\"action\": \"submit\", \"parameters\": {}} - submit final answer\n"
         f"Required fields for this task: {fields_hint}\n"
         "Return ONLY valid JSON, nothing else."
     )
@@ -80,7 +79,6 @@ def agent_step(observation: str, task_id: str, step: int, info: dict) -> dict:
             response_format={"type": "json_object"},
         )
         result = json.loads(completion.choices[0].message.content)
-        # Validate action structure
         if "action" not in result:
             result = {"action": "read_ticket", "parameters": {}}
         return result
@@ -112,19 +110,17 @@ def main():
         for step in range(1, max_steps + 1):
             step_count = step
             action_dict = agent_step(observation, TASK_ID, step, info)
-
             action = action_dict.get("action", "read_ticket")
             parameters = action_dict.get("parameters", {})
 
             # Execute step
             payload = {"action": action, "parameters": parameters}
             step_result = call_env("/step", payload)
-
             observation = step_result.get("observation", "")
             reward = float(step_result.get("reward", 0.001))
             done = step_result.get("done", False)
-
             info_data = step_result.get("info", {})
+
             error_msg = "null"
             if isinstance(info_data, dict):
                 err = info_data.get("error", None)
