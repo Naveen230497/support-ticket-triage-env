@@ -12,19 +12,21 @@ tasks:
     difficulty: "easy"
     description: "Classify support ticket by category and priority"
     grader: true
-    grader_endpoint: "/grade"
+    grader_endpoint: "/grade/easy"
+
   - id: "medium"
     name: "Ticket Routing with SLA"
     difficulty: "medium"
     description: "Route ticket to correct team and assign SLA tier"
     grader: true
-    grader_endpoint: "/grade"
+    grader_endpoint: "/grade/medium"
+
   - id: "hard"
     name: "Full Triage with Resolution"
     difficulty: "hard"
     description: "Classify, route, summarize, and draft initial response"
     grader: true
-    grader_endpoint: "/grade"
+    grader_endpoint: "/grade/hard"
 
 metadata:
   author: "Naveen2304"
