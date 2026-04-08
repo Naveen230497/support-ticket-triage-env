@@ -2,12 +2,13 @@ import uvicorn
 import os
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from typing import Optional
+from typing import Optional, Dict, Any
+from pydantic import BaseModel
 
 # Importing your internal modules
 from server.models import StepRequest, StepResponse, ResetRequest, ResetResponse, HealthResponse
 from server.environment import get_env
-from server.tasks import TASK_LIST, get_task_config
+from server.tasks import TASK_LIST
 from server.graders import grade
 
 app = FastAPI(
@@ -15,6 +16,12 @@ app = FastAPI(
     description="OpenEnv-compatible support ticket triage environment",
     version="1.0.0",
 )
+
+
+class GradeRequest(BaseModel):
+    task_id: str = "easy"
+    submission: Dict[str, Any] = {}
+    ground_truth: Dict[str, Any] = {}
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -49,23 +56,11 @@ def step(request: StepRequest):
 
 
 @app.post("/grade")
-def grade_endpoint(request: dict):
-    """Grade a submission for a given task.
-    Accepts: {"task_id": str, "submission": dict, "ground_truth": dict (optional)}
-    If ground_truth is not provided, uses internal task ground_truth.
-    """
+def grade_endpoint(request: GradeRequest):
+    """Grade a submission for a given task. Score is strictly between 0 and 1."""
     try:
-        task_id = request.get("task_id", "easy")
-        submission = request.get("submission", {})
-        ground_truth = request.get("ground_truth", None)
-
-        # If no ground_truth provided, use the task's ticket as ground_truth
-        if not ground_truth:
-            task_config = get_task_config(task_id, seed=42)
-            ground_truth = task_config["ticket"]
-
-        score = grade(task_id, submission, ground_truth)
-        return {"score": score, "task_id": task_id}
+        score = grade(request.task_id, request.submission, request.ground_truth)
+        return {"score": score, "task_id": request.task_id}
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
