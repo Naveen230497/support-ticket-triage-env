@@ -1,6 +1,9 @@
 from typing import Optional
 from server.tasks import get_task_config
-from server.graders import grade
+from server.graders import grade, _clamp
+
+# Score that represents "no progress" - strictly between 0 and 1
+_NO_PROGRESS_SCORE = 0.001
 
 
 class TicketTriageEnvironment:
@@ -9,14 +12,14 @@ class TicketTriageEnvironment:
         self.current_step = 0
         self.done = False
         self.submission = {}
-        self.episode_reward = 0.0
+        self.episode_reward = _NO_PROGRESS_SCORE
 
     def reset(self, task_id: str, seed: int = 42) -> dict:
         self.task_config = get_task_config(task_id, seed)
         self.current_step = 0
         self.done = False
         self.submission = {}
-        self.episode_reward = 0.0
+        self.episode_reward = _NO_PROGRESS_SCORE
 
         ticket = self.task_config["ticket"]
         observation = (
@@ -42,13 +45,14 @@ class TicketTriageEnvironment:
         if self.done:
             return {
                 "observation": "Episode is already done. Call /reset to start a new episode.",
-                "reward": 0.0,
+                "reward": _NO_PROGRESS_SCORE,
                 "done": True,
                 "info": {"error": "episode_done"},
             }
 
         self.current_step += 1
-        reward = 0.0
+        # Always start with a non-zero base reward (strictly > 0)
+        reward = _NO_PROGRESS_SCORE
         done = False
         observation = ""
 
@@ -82,14 +86,20 @@ class TicketTriageEnvironment:
                 f"Subject: {ticket['subject']}\n"
                 f"Body: {ticket['body']}"
             )
+
         else:
             observation = f"Unknown action '{action}'. Available: read_ticket, set_field, submit"
 
         if self.current_step >= self.task_config["max_steps"] and not done:
             done = True
             observation += " [Max steps reached]"
+            # Use episode_reward if we have one, else _NO_PROGRESS_SCORE
+            reward = self.episode_reward if self.episode_reward > _NO_PROGRESS_SCORE else _NO_PROGRESS_SCORE
 
+        # Ensure reward is ALWAYS strictly between 0 and 1
+        reward = _clamp(reward)
         self.done = done
+
         return {
             "observation": observation,
             "reward": reward,
