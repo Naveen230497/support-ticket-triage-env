@@ -7,20 +7,24 @@ _MAX_SCORE = 0.999
 
 def _clamp(score: float) -> float:
     """Clamp score to strictly (0, 1) - never exactly 0.0 or 1.0."""
-    return max(_MIN_SCORE, min(_MAX_SCORE, round(score, 4)))
+    return max(_MIN_SCORE, min(_MAX_SCORE, round(float(score), 4)))
 
 
 def _similarity(a: str, b: str) -> float:
     """String similarity ratio between 0.0 and 1.0."""
+    if not a and not b:
+        return 0.0
     return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
 
 def grade_easy(submission: dict, ground_truth: dict) -> float:
     """Grade category + priority. 0.5 each. Returns value strictly in (0, 1)."""
     score = 0.0
-    if submission.get("category", "").lower() == ground_truth["category"].lower():
+    gt_category = ground_truth.get("category", "").lower()
+    gt_priority = ground_truth.get("priority", "").lower()
+    if gt_category and submission.get("category", "").lower() == gt_category:
         score += 0.499
-    if submission.get("priority", "").lower() == ground_truth["priority"].lower():
+    if gt_priority and submission.get("priority", "").lower() == gt_priority:
         score += 0.499
     return _clamp(score)
 
@@ -30,7 +34,8 @@ def grade_medium(submission: dict, ground_truth: dict) -> float:
     score = 0.0
     fields = [("category", 0.249), ("priority", 0.249), ("team", 0.249), ("sla", 0.249)]
     for field, weight in fields:
-        if submission.get(field, "").lower() == ground_truth[field].lower():
+        gt_val = ground_truth.get(field, "").lower()
+        if gt_val and submission.get(field, "").lower() == gt_val:
             score += weight
     return _clamp(score)
 
@@ -40,13 +45,16 @@ def grade_hard(submission: dict, ground_truth: dict) -> float:
     score = 0.0
     exact_fields = [("category", 0.149), ("priority", 0.149), ("team", 0.149), ("sla", 0.149)]
     for field, weight in exact_fields:
-        if submission.get(field, "").lower() == ground_truth[field].lower():
+        gt_val = ground_truth.get(field, "").lower()
+        if gt_val and submission.get(field, "").lower() == gt_val:
             score += weight
     # Summary similarity (max ~0.2)
-    summary_sim = _similarity(submission.get("summary", ""), ground_truth["summary"])
+    gt_summary = ground_truth.get("summary", "")
+    summary_sim = _similarity(submission.get("summary", ""), gt_summary)
     score += summary_sim * 0.199
     # Response similarity (max ~0.2)
-    response_sim = _similarity(submission.get("response", ""), ground_truth["response"])
+    gt_response = ground_truth.get("response", "")
+    response_sim = _similarity(submission.get("response", ""), gt_response)
     score += response_sim * 0.199
     return _clamp(score)
 
