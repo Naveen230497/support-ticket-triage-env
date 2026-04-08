@@ -4,12 +4,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
-
 # Importing your internal modules
 from server.models import StepRequest, StepResponse, ResetRequest, ResetResponse, HealthResponse
 from server.environment import get_env
 from server.tasks import TASK_LIST
-from server.graders import grade
+from server.graders import grade, grade_easy, grade_medium, grade_hard
 
 app = FastAPI(
     title="Support Ticket Triage Environment",
@@ -17,22 +16,29 @@ app = FastAPI(
     version="1.0.0",
 )
 
-
 class GradeRequest(BaseModel):
     task_id: str = "easy"
     submission: Dict[str, Any] = {}
     ground_truth: Dict[str, Any] = {}
 
-
 @app.get("/health", response_model=HealthResponse)
 def health():
     return HealthResponse(status="ok", version="1.0.0")
-
 
 @app.get("/tasks")
 def tasks():
     return {"tasks": TASK_LIST}
 
+@app.get("/state")
+def state():
+    env = get_env()
+    return {
+        "task_id": env.task_config["task_id"] if env.task_config else None,
+        "current_step": env.current_step,
+        "done": env.done,
+        "submission": env.submission,
+        "episode_reward": env.episode_reward,
+    }
 
 @app.post("/reset", response_model=ResetResponse)
 def reset(request: Optional[ResetRequest] = None):
@@ -41,7 +47,6 @@ def reset(request: Optional[ResetRequest] = None):
     seed = request.seed if request else 42
     result = env.reset(task_id, seed)
     return ResetResponse(observation=result["observation"], info=result["info"])
-
 
 @app.post("/step", response_model=StepResponse)
 def step(request: StepRequest):
@@ -54,7 +59,6 @@ def step(request: StepRequest):
         info=result["info"],
     )
 
-
 @app.post("/grade")
 def grade_endpoint(request: GradeRequest):
     """Grade a submission for a given task. Score is strictly between 0 and 1."""
@@ -64,6 +68,32 @@ def grade_endpoint(request: GradeRequest):
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
+@app.post("/grade/easy")
+def grade_easy_endpoint(request: GradeRequest):
+    """Grade a submission for the easy task."""
+    try:
+        score = grade_easy(request.submission, request.ground_truth)
+        return {"score": score, "task_id": "easy"}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.post("/grade/medium")
+def grade_medium_endpoint(request: GradeRequest):
+    """Grade a submission for the medium task."""
+    try:
+        score = grade_medium(request.submission, request.ground_truth)
+        return {"score": score, "task_id": "medium"}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.post("/grade/hard")
+def grade_hard_endpoint(request: GradeRequest):
+    """Grade a submission for the hard task."""
+    try:
+        score = grade_hard(request.submission, request.ground_truth)
+        return {"score": score, "task_id": "hard"}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.get("/")
 def root():
@@ -71,9 +101,8 @@ def root():
         "name": "support-ticket-triage-env",
         "version": "1.0.0",
         "description": "Real-world AI Support Ticket Triage agent environment for OpenEnv",
-        "endpoints": ["/health", "/tasks", "/reset", "/step", "/grade"],
+        "endpoints": ["/health", "/tasks", "/reset", "/step", "/state", "/grade", "/grade/easy", "/grade/medium", "/grade/hard"],
     }
-
 
 def main():
     """
@@ -82,7 +111,6 @@ def main():
     """
     port = int(os.getenv("PORT", 7860))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
 
 if __name__ == "__main__":
     main()
