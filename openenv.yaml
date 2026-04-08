@@ -1,69 +1,25 @@
-name: support-ticket-triage-env
-version: "1.0.0"
-description: >
-  A real-world customer support ticket triage and resolution environment.
-  An AI agent inspects support tickets and fixes triage issues such as
-  wrong category, missing priority, unassigned team, and unresolved duplicates.
-author: Guthikonda Naveen
-email: guthikondanaveen9@gmail.com
-
-environment:
-  type: http
-  port: 7860
-
-action:
-  type: object
-  fields:
-    action_type:
-      type: string
-      enum: [set_category, set_priority, assign_team, add_tag, set_resolution_time, merge_duplicate, escalate, mark_resolved]
-    value:
-      type: string
-      required: false
-    confidence:
-      type: number
-
-observation:
-  type: object
-  fields:
-    ticket_id: {type: string}
-    title: {type: string}
-    description: {type: string}
-    current_category: {type: string}
-    current_priority: {type: string}
-    assigned_team: {type: string}
-    tags: {type: array}
-    resolution_time_hours: {type: number}
-    issues_remaining: {type: integer}
-    feedback: {type: string}
-    reward: {type: number}
-    done: {type: boolean}
-    task_id: {type: string}
-    step_count: {type: integer}
-    duplicate_ticket: {type: object}
+spec_version: "1.0"
+name: "support-ticket-triage-env"
+description: "Real-world AI Support Ticket Triage agent environment for OpenEnv"
+type: "environment"
+entry_point: "server.app:app"
+image: "python:3.11-slim-bookworm"
+port: 7860
 
 tasks:
-  - id: task_easy
-    name: Login Failure Triage
-    difficulty: easy
-    max_steps: 8
-    score_range: [0.0, 1.0]
-  - id: task_medium
-    name: Billing Dispute Resolution
-    difficulty: medium
-    max_steps: 20
-    score_range: [0.0, 1.0]
-  - id: task_hard
-    name: Enterprise Checkout Crash Escalation
-    difficulty: hard
-    max_steps: 30
-    score_range: [0.0, 1.0]
+  - id: "easy"
+    name: "Basic Ticket Classification"
+    difficulty: "easy"
+    description: "Classify support ticket by category and priority"
+  - id: "medium"
+    name: "Ticket Routing with SLA"
+    difficulty: "medium"
+    description: "Route ticket to correct team and assign SLA tier"
+  - id: "hard"
+    name: "Full Triage with Resolution"
+    difficulty: "hard"
+    description: "Classify, route, summarize, and draft initial response"
 
-endpoints:
-  step: POST /step
-  reset: POST /reset
-  state: GET /state
-  tasks: GET /tasks
-  grader: POST /grader
-  baseline: POST /baseline
-  health: GET /health
+metadata:
+  author: "Naveen2304"
+  real_world: true
