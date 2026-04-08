@@ -7,7 +7,7 @@ from typing import Optional
 # Importing your internal modules
 from server.models import StepRequest, StepResponse, ResetRequest, ResetResponse, HealthResponse
 from server.environment import get_env
-from server.tasks import TASK_LIST
+from server.tasks import TASK_LIST, get_task_config
 from server.graders import grade
 
 app = FastAPI(
@@ -50,11 +50,20 @@ def step(request: StepRequest):
 
 @app.post("/grade")
 def grade_endpoint(request: dict):
-    """Grade a submission for a given task."""
+    """Grade a submission for a given task.
+    Accepts: {"task_id": str, "submission": dict, "ground_truth": dict (optional)}
+    If ground_truth is not provided, uses internal task ground_truth.
+    """
     try:
         task_id = request.get("task_id", "easy")
         submission = request.get("submission", {})
-        ground_truth = request.get("ground_truth", {})
+        ground_truth = request.get("ground_truth", None)
+
+        # If no ground_truth provided, use the task's ticket as ground_truth
+        if not ground_truth:
+            task_config = get_task_config(task_id, seed=42)
+            ground_truth = task_config["ticket"]
+
         score = grade(task_id, submission, ground_truth)
         return {"score": score, "task_id": task_id}
     except Exception as e:
