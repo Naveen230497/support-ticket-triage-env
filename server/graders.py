@@ -1,65 +1,63 @@
-"""Deterministic graders for each task in the Support Ticket Triage Environment."""
-from typing import Dict, Any
+from difflib import SequenceMatcher
 
-VALID_CATEGORIES = {"billing", "technical", "account_access", "product_feedback", "shipping"}
-VALID_PRIORITIES = {"low", "medium", "high", "critical"}
-VALID_TEAMS = {"billing_team", "tech_support", "account_team", "product_team", "logistics"}
-
-
-def grade(task_id: str, snapshot: Dict[str, Any]) -> float:
-    """Grade the current episode snapshot for a given task. Returns score in [0.0, 1.0]."""
-    if task_id == "task_easy":
-        return _grade_easy(snapshot)
-    elif task_id == "task_medium":
-        return _grade_medium(snapshot)
-    elif task_id == "task_hard":
-        return _grade_hard(snapshot)
-    raise ValueError(f"Unknown task_id: {task_id}")
+# Scores must be strictly between 0.0 and 1.0 (exclusive)
+_MIN_SCORE = 0.001
+_MAX_SCORE = 0.999
 
 
-def _grade_easy(snapshot: Dict[str, Any]) -> float:
-    """task_easy: 0.5 per correct field (category + priority). Max = 1.0."""
+def _clamp(score: float) -> float:
+    """Clamp score to strictly (0, 1) - never exactly 0.0 or 1.0."""
+    return max(_MIN_SCORE, min(_MAX_SCORE, round(score, 4)))
+
+
+def _similarity(a: str, b: str) -> float:
+    """String similarity ratio between 0.0 and 1.0."""
+    return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+
+
+def grade_easy(submission: dict, ground_truth: dict) -> float:
+    """Grade category + priority. 0.5 each. Returns value strictly in (0, 1)."""
     score = 0.0
-    if snapshot.get("current_category") == "account_access":
-        score += 0.5
-    if snapshot.get("current_priority") == "high":
-        score += 0.5
-    return round(score, 3)
+    if submission.get("category", "").lower() == ground_truth["category"].lower():
+        score += 0.499
+    if submission.get("priority", "").lower() == ground_truth["priority"].lower():
+        score += 0.499
+    return _clamp(score)
 
 
-def _grade_medium(snapshot: Dict[str, Any]) -> float:
-    """task_medium: 0.20 per correct field (5 fields). Max = 1.0."""
+def grade_medium(submission: dict, ground_truth: dict) -> float:
+    """Grade category + priority + team + sla. 0.25 each. Returns value strictly in (0, 1)."""
     score = 0.0
-    if snapshot.get("current_category") == "billing":
-        score += 0.20
-    if snapshot.get("current_priority") == "high":
-        score += 0.20
-    if snapshot.get("assigned_team") == "billing_team":
-        score += 0.20
-    tags = snapshot.get("tags", [])
-    if "refund" in [t.lower() for t in tags]:
-        score += 0.20
-    rt = snapshot.get("resolution_time_hours", 0.0)
-    if 0 < rt <= 8.0:
-        score += 0.20
-    return round(score, 3)
+    fields = [("category", 0.249), ("priority", 0.249), ("team", 0.249), ("sla", 0.249)]
+    for field, weight in fields:
+        if submission.get(field, "").lower() == ground_truth[field].lower():
+            score += weight
+    return _clamp(score)
 
 
-def _grade_hard(snapshot: Dict[str, Any]) -> float:
-    """task_hard: 1/6 per resolved issue (6 issues). Max = 1.0."""
+def grade_hard(submission: dict, ground_truth: dict) -> float:
+    """Grade all fields. Exact match fields 0.15 each; summary + response use similarity."""
     score = 0.0
-    per_issue = round(1.0 / 6, 6)
-    if snapshot.get("current_category") == "technical":
-        score += per_issue
-    if snapshot.get("current_priority") == "critical":
-        score += per_issue
-    if snapshot.get("assigned_team") == "tech_support":
-        score += per_issue
-    if snapshot.get("duplicate_merged", False):
-        score += per_issue
-    if snapshot.get("is_escalated", False):
-        score += per_issue
-    rt = snapshot.get("resolution_time_hours", 0.0)
-    if 0 < rt <= 2.0:
-        score += per_issue
-    return round(min(score, 1.0), 3)
+    exact_fields = [("category", 0.149), ("priority", 0.149), ("team", 0.149), ("sla", 0.149)]
+    for field, weight in exact_fields:
+        if submission.get(field, "").lower() == ground_truth[field].lower():
+            score += weight
+    # Summary similarity (max ~0.2)
+    summary_sim = _similarity(submission.get("summary", ""), ground_truth["summary"])
+    score += summary_sim * 0.199
+    # Response similarity (max ~0.2)
+    response_sim = _similarity(submission.get("response", ""), ground_truth["response"])
+    score += response_sim * 0.199
+    return _clamp(score)
+
+
+def grade(task_id: str, submission: dict, ground_truth: dict) -> float:
+    """Grade a submission for a given task. Always returns strictly (0, 1)."""
+    if task_id == "easy":
+        return grade_easy(submission, ground_truth)
+    elif task_id == "medium":
+        return grade_medium(submission, ground_truth)
+    elif task_id == "hard":
+        return grade_hard(submission, ground_truth)
+    else:
+        raise ValueError(f"Unknown task_id: {task_id}")
