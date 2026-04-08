@@ -24,7 +24,28 @@ def call_env(endpoint: str, payload: dict) -> dict:
             return response.json()
     except Exception as e:
         print(f"[DEBUG] Env call error: {e}", file=sys.stderr)
-        return {"observation": "error", "reward": 0.0, "done": True, "info": {"error": str(e)}}
+        return {"observation": "error", "reward": 0.001, "done": True, "info": {"error": str(e)}}
+
+
+def call_grade(task_id: str, submission: dict, ground_truth: dict) -> float:
+    """Call the /grade endpoint and return a score strictly between 0 and 1."""
+    try:
+        with httpx.Client(timeout=60) as http:
+            payload = {
+                "task_id": task_id,
+                "submission": submission,
+                "ground_truth": ground_truth,
+            }
+            response = http.post(f"{ENV_URL}/grade", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            score = float(data.get("score", 0.001))
+            # Ensure strictly between 0 and 1
+            score = max(0.001, min(0.999, score))
+            return score
+    except Exception as e:
+        print(f"[DEBUG] Grade call error: {e}", file=sys.stderr)
+        return 0.001
 
 
 def agent_step(observation: str, task_id: str, step: int, info: dict) -> dict:
@@ -55,14 +76,16 @@ def main():
 
     rewards = []
     step_count = 0
-    success = False
-    score = 0.0
+    score = 0.001
+    submission = {}
+    ground_truth = {}
 
     try:
         # 2. Reset environment
         reset_result = call_env("/reset", {"task_id": TASK_ID, "seed": SEED})
         observation = reset_result.get("observation", "")
         info = reset_result.get("info", {})
+        ground_truth = info.get("ground_truth", {})
 
         # 3. Step Loop
         for step in range(1, 11):
@@ -72,9 +95,8 @@ def main():
             # Execute step
             payload = {"action": action_dict.get("action"), "parameters": action_dict.get("parameters", {})}
             step_result = call_env("/step", payload)
-
             observation = step_result.get("observation", "")
-            reward = float(step_result.get("reward", 0.0))
+            reward = float(step_result.get("reward", 0.001))
             done = step_result.get("done", False)
 
             # Safely extract error string
@@ -82,24 +104,39 @@ def main():
             error_msg = "null"
             if isinstance(info_data, dict):
                 error_msg = info_data.get("error", "null")
+                if info_data.get("submission"):
+                    submission = info_data["submission"]
+                if info_data.get("ground_truth"):
+                    ground_truth = info_data["ground_truth"]
 
+            # Clamp reward to strictly (0, 1)
+            reward = max(0.001, min(0.999, reward))
             rewards.append(reward)
 
             # 4. REQUIRED STEP FORMAT
-            print(f"[STEP] step={step} action={action_dict.get('action')} reward={reward:.2f} done={str(done).lower()} error={error_msg}")
+            print(f"[STEP] step={step} action={action_dict.get('action')} reward={reward:.4f} done={str(done).lower()} error={error_msg}")
             sys.stdout.flush()
 
             if done:
-                score = reward
-                success = score >= 1.0
                 break
+
+        # 5. Get final score from grader
+        if submission and ground_truth:
+            score = call_grade(TASK_ID, submission, ground_truth)
+        elif rewards:
+            score = max(0.001, min(0.999, rewards[-1]))
+        else:
+            score = 0.001
 
     except Exception as e:
         print(f"[DEBUG] Main loop error: {e}", file=sys.stderr)
     finally:
-        # 5. REQUIRED END FORMAT
-        rewards_str = ",".join([f"{r:.2f}" for r in rewards]) if rewards else "0.00"
-        print(f"[END] success={str(success).lower()} steps={step_count} score={score:.2f} rewards={rewards_str}")
+        # Ensure score is strictly between 0 and 1
+        score = max(0.001, min(0.999, float(score)))
+        success = score > 0.5
+        rewards_str = ",".join([f"{r:.4f}" for r in rewards]) if rewards else "0.0010"
+        # 6. REQUIRED END FORMAT
+        print(f"[END] success={str(success).lower()} steps={step_count} score={score:.4f} rewards={rewards_str}")
         sys.stdout.flush()
 
 
