@@ -38,6 +38,7 @@ class TicketTriageEnvironment:
                 "ticket_id": ticket["id"],
                 "required_fields": self.task_config["required_fields"],
                 "max_steps": self.task_config["max_steps"],
+                "ground_truth": ticket,
             },
         }
 
@@ -86,14 +87,12 @@ class TicketTriageEnvironment:
                 f"Subject: {ticket['subject']}\n"
                 f"Body: {ticket['body']}"
             )
-
         else:
             observation = f"Unknown action '{action}'. Available: read_ticket, set_field, submit"
 
         if self.current_step >= self.task_config["max_steps"] and not done:
             done = True
             observation += " [Max steps reached]"
-            # Use episode_reward if we have one, else _NO_PROGRESS_SCORE
             reward = self.episode_reward if self.episode_reward > _NO_PROGRESS_SCORE else _NO_PROGRESS_SCORE
 
         # Ensure reward is ALWAYS strictly between 0 and 1
@@ -107,6 +106,7 @@ class TicketTriageEnvironment:
             "info": {
                 "step": self.current_step,
                 "submission": self.submission,
+                "ground_truth": self.task_config["ticket"],
                 "episode_reward": self.episode_reward,
             },
         }
