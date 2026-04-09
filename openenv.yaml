@@ -39,18 +39,19 @@ tasks:
     difficulty: easy
     max_steps: 5
     score_range: [0.0, 1.0]
-
+    grader: server.graders:grade_easy
   - id: medium
     name: Ticket Routing with SLA
     difficulty: medium
     max_steps: 8
     score_range: [0.0, 1.0]
-
+    grader: server.graders:grade_medium
   - id: hard
     name: Full Triage with Resolution
     difficulty: hard
     max_steps: 12
     score_range: [0.0, 1.0]
+    grader: server.graders:grade_hard
 
 endpoints:
   step: POST /step
