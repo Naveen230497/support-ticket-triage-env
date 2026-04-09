@@ -104,7 +104,7 @@ ACTION_SCHEMA = {
 
 
 def list_tasks() -> List[Dict[str, Any]]:
-    """Return list of all tasks with action schema (reference-compatible format)."""
+    """Return list of all tasks with action schema and grader (reference-compatible format)."""
     return [
         {
             "id": "easy",
@@ -113,6 +113,7 @@ def list_tasks() -> List[Dict[str, Any]]:
             "max_steps": 5,
             "description": "Classify support ticket by category and priority",
             "action_schema": ACTION_SCHEMA,
+            "grader": "server.graders:grade_easy",
         },
         {
             "id": "medium",
@@ -121,6 +122,7 @@ def list_tasks() -> List[Dict[str, Any]]:
             "max_steps": 8,
             "description": "Route ticket to correct team and assign SLA tier",
             "action_schema": ACTION_SCHEMA,
+            "grader": "server.graders:grade_medium",
         },
         {
             "id": "hard",
@@ -129,6 +131,7 @@ def list_tasks() -> List[Dict[str, Any]]:
             "max_steps": 12,
             "description": "Classify, route, summarize, and draft initial response",
             "action_schema": ACTION_SCHEMA,
+            "grader": "server.graders:grade_hard",
         },
     ]
 
