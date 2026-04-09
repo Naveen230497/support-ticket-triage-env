@@ -12,14 +12,14 @@ def _clamp(score: float) -> float:
 
 def _similarity(a: str, b: str) -> float:
     """String similarity ratio between 0.0 and 1.0."""
-    if not a and not b:
+    if not a or not b:
         return 0.0
     return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
 
 def grade_easy(submission: dict, ground_truth: dict) -> float:
     """Grade category + priority. 0.5 each. Returns value strictly in (0, 1)."""
-    score = 0.0
+    score = _MIN_SCORE
     gt_category = ground_truth.get("category", "").lower()
     gt_priority = ground_truth.get("priority", "").lower()
     if gt_category and submission.get("category", "").lower() == gt_category:
@@ -31,7 +31,7 @@ def grade_easy(submission: dict, ground_truth: dict) -> float:
 
 def grade_medium(submission: dict, ground_truth: dict) -> float:
     """Grade category + priority + team + sla. 0.25 each. Returns value strictly in (0, 1)."""
-    score = 0.0
+    score = _MIN_SCORE
     fields = [("category", 0.249), ("priority", 0.249), ("team", 0.249), ("sla", 0.249)]
     for field, weight in fields:
         gt_val = ground_truth.get(field, "").lower()
@@ -42,20 +42,23 @@ def grade_medium(submission: dict, ground_truth: dict) -> float:
 
 def grade_hard(submission: dict, ground_truth: dict) -> float:
     """Grade all fields. Exact match fields 0.15 each; summary + response use similarity."""
-    score = 0.0
+    score = _MIN_SCORE
     exact_fields = [("category", 0.149), ("priority", 0.149), ("team", 0.149), ("sla", 0.149)]
     for field, weight in exact_fields:
         gt_val = ground_truth.get(field, "").lower()
         if gt_val and submission.get(field, "").lower() == gt_val:
             score += weight
+
     # Summary similarity (max ~0.2)
     gt_summary = ground_truth.get("summary", "")
     summary_sim = _similarity(submission.get("summary", ""), gt_summary)
     score += summary_sim * 0.199
+
     # Response similarity (max ~0.2)
     gt_response = ground_truth.get("response", "")
     response_sim = _similarity(submission.get("response", ""), gt_response)
     score += response_sim * 0.199
+
     return _clamp(score)
 
 
