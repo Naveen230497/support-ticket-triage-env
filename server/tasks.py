@@ -1,5 +1,5 @@
 import random
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 TICKETS = [
     {
@@ -91,32 +91,47 @@ def get_task_config(task_id: str, seed: int = 42) -> dict:
         raise ValueError(f"Unknown task_id: {task_id}")
 
 
-TASK_LIST = [
-    {
-        "id": "easy",
-        "name": "Basic Ticket Classification",
-        "difficulty": "easy",
-        "max_steps": 5,
-        "grader": "server.graders:grade_easy",
-        "grader_endpoint": "/grade/easy",
-        "description": "Classify support ticket by category and priority",
+ACTION_SCHEMA = {
+    "action": {
+        "type": "string",
+        "enum": ["read_ticket", "set_field", "submit"]
     },
-    {
-        "id": "medium",
-        "name": "Ticket Routing with SLA",
-        "difficulty": "medium",
-        "max_steps": 8,
-        "grader": "server.graders:grade_medium",
-        "grader_endpoint": "/grade/medium",
-        "description": "Route ticket to correct team and assign SLA tier",
+    "parameters": {
+        "type": "object",
+        "required": False
     },
-    {
-        "id": "hard",
-        "name": "Full Triage with Resolution",
-        "difficulty": "hard",
-        "max_steps": 12,
-        "grader": "server.graders:grade_hard",
-        "grader_endpoint": "/grade/hard",
-        "description": "Classify, route, summarize, and draft initial response",
-    },
-]
+}
+
+
+def list_tasks() -> List[Dict[str, Any]]:
+    """Return list of all tasks with action schema (reference-compatible format)."""
+    return [
+        {
+            "id": "easy",
+            "name": "Basic Ticket Classification",
+            "difficulty": "easy",
+            "max_steps": 5,
+            "description": "Classify support ticket by category and priority",
+            "action_schema": ACTION_SCHEMA,
+        },
+        {
+            "id": "medium",
+            "name": "Ticket Routing with SLA",
+            "difficulty": "medium",
+            "max_steps": 8,
+            "description": "Route ticket to correct team and assign SLA tier",
+            "action_schema": ACTION_SCHEMA,
+        },
+        {
+            "id": "hard",
+            "name": "Full Triage with Resolution",
+            "difficulty": "hard",
+            "max_steps": 12,
+            "description": "Classify, route, summarize, and draft initial response",
+            "action_schema": ACTION_SCHEMA,
+        },
+    ]
+
+
+# TASK_LIST for backwards compatibility
+TASK_LIST = list_tasks()
