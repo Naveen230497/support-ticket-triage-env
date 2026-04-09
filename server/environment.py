@@ -1,4 +1,3 @@
-from typing import Optional
 from server.tasks import get_task_config
 from server.graders import grade, _clamp
 
@@ -22,15 +21,14 @@ class TicketTriageEnvironment:
         self.episode_reward = _NO_PROGRESS_SCORE
 
         ticket = self.task_config["ticket"]
-        observation = (
-            f"SUPPORT TICKET\n"
-            f"ID: {ticket['id']}\n"
-            f"Subject: {ticket['subject']}\n"
-            f"Body: {ticket['body']}\n"
-            f"\nTask: {self.task_config['description']}\n"
-            f"Required fields: {', '.join(self.task_config['required_fields'])}\n"
-            f"Max steps: {self.task_config['max_steps']}"
-        )
+        observation = {
+            "ticket_id": ticket["id"],
+            "subject": ticket["subject"],
+            "body": ticket["body"],
+            "task": self.task_config["description"],
+            "required_fields": self.task_config["required_fields"],
+            "max_steps": self.task_config["max_steps"],
+        }
         return {
             "observation": observation,
             "info": {
@@ -45,17 +43,16 @@ class TicketTriageEnvironment:
     def step(self, action: str, parameters: dict) -> dict:
         if self.done:
             return {
-                "observation": "Episode is already done. Call /reset to start a new episode.",
+                "observation": {"status": "Episode is already done. Call /reset to start a new episode."},
                 "reward": _NO_PROGRESS_SCORE,
                 "done": True,
                 "info": {"error": "episode_done"},
             }
 
         self.current_step += 1
-        # Always start with a non-zero base reward (strictly > 0)
         reward = _NO_PROGRESS_SCORE
         done = False
-        observation = ""
+        observation = {}
 
         if action == "submit":
             for key, val in parameters.items():
@@ -67,7 +64,7 @@ class TicketTriageEnvironment:
             )
             self.episode_reward = reward
             done = True
-            observation = f"Submission received. Score: {reward:.4f}"
+            observation = {"status": "submitted", "score": round(reward, 4)}
 
         elif action == "set_field":
             field = parameters.get("field", "")
@@ -78,21 +75,22 @@ class TicketTriageEnvironment:
                 self.submission,
                 self.task_config["ticket"],
             )
-            observation = f"Field '{field}' set to '{value}'. Current partial score: {reward:.4f}"
+            observation = {"status": "field_set", "field": field, "value": value, "partial_score": round(reward, 4)}
 
         elif action == "read_ticket":
             ticket = self.task_config["ticket"]
-            observation = (
-                f"Ticket ID: {ticket['id']}\n"
-                f"Subject: {ticket['subject']}\n"
-                f"Body: {ticket['body']}"
-            )
+            observation = {
+                "ticket_id": ticket["id"],
+                "subject": ticket["subject"],
+                "body": ticket["body"],
+            }
+
         else:
-            observation = f"Unknown action '{action}'. Available: read_ticket, set_field, submit"
+            observation = {"error": f"Unknown action '{action}'. Available: read_ticket, set_field, submit"}
 
         if self.current_step >= self.task_config["max_steps"] and not done:
             done = True
-            observation += " [Max steps reached]"
+            observation["max_steps_reached"] = True
             reward = self.episode_reward if self.episode_reward > _NO_PROGRESS_SCORE else _NO_PROGRESS_SCORE
 
         # Ensure reward is ALWAYS strictly between 0 and 1
