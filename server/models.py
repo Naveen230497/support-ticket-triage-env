@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Optional, Any, Union
 
 
 class StepRequest(BaseModel):
@@ -8,7 +8,7 @@ class StepRequest(BaseModel):
 
 
 class StepResponse(BaseModel):
-    observation: str
+    observation: Union[dict, str]
     reward: float
     done: bool
     info: dict
@@ -20,7 +20,7 @@ class ResetRequest(BaseModel):
 
 
 class ResetResponse(BaseModel):
-    observation: str
+    observation: Union[dict, str]
     info: dict
 
 
