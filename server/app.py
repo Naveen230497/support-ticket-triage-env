@@ -5,11 +5,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import time
 from collections import defaultdict
 from server.environment import get_env
-from server.tasks import TASK_LIST
+from server.tasks import TASK_LIST, list_tasks
 from server.graders import grade, grade_easy, grade_medium, grade_hard
 
 VALID_TASK_IDS = {"easy", "medium", "hard"}
@@ -108,12 +108,34 @@ def schema():
                 "parameters": {"type": "object"}
             }
         },
+        "observation": {
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+                "task": {"type": "string"},
+                "required_fields": {"type": "array"},
+                "reward": {"type": "number"},
+                "done": {"type": "boolean"},
+                "task_id": {"type": "string"}
+            }
+        },
+        "state": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "current_step": {"type": "integer"},
+                "done": {"type": "boolean"},
+                "episode_reward": {"type": "number"}
+            }
+        },
     }
 
 @app.get("/tasks")
 def tasks():
-    """List all available tasks."""
-    return {"tasks": TASK_LIST}
+    """List all available tasks - returns flat list for OpenEnv compatibility."""
+    return list_tasks()
 
 @app.post("/reset")
 def reset(request: Optional[ResetRequest] = None):
@@ -150,7 +172,7 @@ def state():
 
 @app.post("/grader")
 def grader(request: GraderRequest):
-    """Grade the current submission. Accepts task_id + optional submission/ground_truth."""
+    """Grade the current submission."""
     try:
         task_id = request.task_id
         if task_id not in VALID_TASK_IDS:
@@ -186,7 +208,10 @@ def baseline():
     try:
         env.reset("hard", 42)
         env.step("submit", {
-            "category": "authentication", "priority": "high", "team": "identity", "sla": "P1",
+            "category": "authentication",
+            "priority": "high",
+            "team": "identity",
+            "sla": "P1",
             "summary": "User unable to login after password reset",
             "response": "We apologize for the inconvenience. Our identity team is investigating your login issue and will resolve it within 2 hours."
         })
@@ -196,7 +221,6 @@ def baseline():
         results["hard"] = {"score": 0.0, "status": "error", "error": str(e)}
     return {"baseline_scores": results}
 
-# Per-task grade endpoints for backwards compatibility
 @app.post("/grade/easy")
 def grade_easy_endpoint(request: Optional[GraderRequest] = None):
     sub = request.submission if request else {}
