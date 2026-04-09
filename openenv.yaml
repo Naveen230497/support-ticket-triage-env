@@ -1,33 +1,62 @@
-spec_version: "1.0"
-name: "support-ticket-triage-env"
-description: "Real-world AI Support Ticket Triage agent environment for OpenEnv"
-type: "environment"
-entry_point: "server.app:app"
-image: "python:3.11-slim-bookworm"
-port: 7860
+name: support-ticket-triage-env
+version: "1.0.0"
+description: >
+  A real-world AI Support Ticket Triage and Resolution agent environment.
+  An AI agent reads support tickets and performs triage actions such as
+  classifying category, assigning priority, routing to teams, and drafting responses.
+author: Naveen2304
+email: guthikondanaveen9@gmail.com
+
+environment:
+  type: http
+  port: 7860
+
+action:
+  type: object
+  fields:
+    action:
+      type: string
+      enum: [read_ticket, set_field, submit]
+    parameters:
+      type: object
+      required: false
+
+observation:
+  type: object
+  fields:
+    ticket_id: {type: string}
+    subject: {type: string}
+    body: {type: string}
+    task: {type: string}
+    required_fields: {type: array}
+    reward: {type: number}
+    done: {type: boolean}
+    task_id: {type: string}
 
 tasks:
-  - id: "easy"
-    name: "Basic Ticket Classification"
-    difficulty: "easy"
-    description: "Classify support ticket by category and priority"
-    grader: "server.graders:grade_easy"
-    grader_endpoint: "/grade/easy"
+  - id: easy
+    name: Basic Ticket Classification
+    difficulty: easy
+    max_steps: 5
+    score_range: [0.0, 1.0]
 
-  - id: "medium"
-    name: "Ticket Routing with SLA"
-    difficulty: "medium"
-    description: "Route ticket to correct team and assign SLA tier"
-    grader: "server.graders:grade_medium"
-    grader_endpoint: "/grade/medium"
+  - id: medium
+    name: Ticket Routing with SLA
+    difficulty: medium
+    max_steps: 8
+    score_range: [0.0, 1.0]
 
-  - id: "hard"
-    name: "Full Triage with Resolution"
-    difficulty: "hard"
-    description: "Classify, route, summarize, and draft initial response"
-    grader: "server.graders:grade_hard"
-    grader_endpoint: "/grade/hard"
+  - id: hard
+    name: Full Triage with Resolution
+    difficulty: hard
+    max_steps: 12
+    score_range: [0.0, 1.0]
 
-metadata:
-  author: "Naveen2304"
-  real_world: true
+endpoints:
+  step: POST /step
+  reset: POST /reset
+  state: GET /state
+  tasks: GET /tasks
+  grader: POST /grader
+  baseline: POST /baseline
+  health: GET /health
