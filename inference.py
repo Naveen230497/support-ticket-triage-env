@@ -24,11 +24,11 @@ def call_env(endpoint: str, payload: dict) -> dict:
             return response.json()
     except Exception as e:
         print(f"[DEBUG] Env call error: {e}", file=sys.stderr)
-        return {"observation": "error", "reward": 0.001, "done": True, "info": {"error": str(e)}}
+        return {"observation": {}, "reward": 0.001, "done": True, "info": {"error": str(e)}}
 
 
 def call_grade(task_id: str, submission: dict, ground_truth: dict) -> float:
-    """Call the per-task /grade/<task_id> endpoint."""
+    """Call the /grade endpoint."""
     try:
         with httpx.Client(timeout=60) as http:
             payload = {
@@ -36,7 +36,7 @@ def call_grade(task_id: str, submission: dict, ground_truth: dict) -> float:
                 "submission": submission,
                 "ground_truth": ground_truth,
             }
-            response = http.post(f"{ENV_URL}/grade/{task_id}", json=payload)
+            response = http.post(f"{ENV_URL}/grade", json=payload)
             response.raise_for_status()
             data = response.json()
             score = float(data.get("score", 0.001))
@@ -47,15 +47,19 @@ def call_grade(task_id: str, submission: dict, ground_truth: dict) -> float:
         return 0.001
 
 
-def agent_step(observation: str, task_id: str, step: int, info: dict) -> dict:
+def agent_step(observation: dict, task_id: str, step: int, info: dict) -> dict:
     """Use LLM to decide next action based on observation."""
     required_fields = info.get("required_fields", ["category", "priority"])
+
     if task_id == "easy":
         fields_hint = "category (authentication/billing/bug/how-to/integration) and priority (low/medium/high/critical)"
     elif task_id == "medium":
         fields_hint = "category, priority, team (identity/finance/mobile/support/integrations), and sla (P1/P2/P3)"
     else:
         fields_hint = "category, priority, team, sla, summary (short summary), and response (draft reply to customer)"
+
+    # Convert dict observation to string for LLM
+    obs_str = json.dumps(observation, indent=2) if isinstance(observation, dict) else str(observation)
 
     system_prompt = (
         "You are a customer support triage expert. Analyze the support ticket and return a JSON action.\n"
@@ -68,7 +72,7 @@ def agent_step(observation: str, task_id: str, step: int, info: dict) -> dict:
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Step {step}. Current observation:\n{observation}"},
+        {"role": "user", "content": f"Step {step}. Current observation:\n{obs_str}"},
     ]
 
     try:
@@ -101,7 +105,7 @@ def main():
     try:
         # 2. Reset environment
         reset_result = call_env("/reset", {"task_id": TASK_ID, "seed": SEED})
-        observation = reset_result.get("observation", "")
+        observation = reset_result.get("observation", {})
         info = reset_result.get("info", {})
         ground_truth = info.get("ground_truth", {})
         max_steps = info.get("max_steps", 10)
@@ -116,7 +120,7 @@ def main():
             # Execute step
             payload = {"action": action, "parameters": parameters}
             step_result = call_env("/step", payload)
-            observation = step_result.get("observation", "")
+            observation = step_result.get("observation", {})
             reward = float(step_result.get("reward", 0.001))
             done = step_result.get("done", False)
             info_data = step_result.get("info", {})
