@@ -16,22 +16,54 @@ app = FastAPI(
     version="1.0.0",
 )
 
-
 class GradeRequest(BaseModel):
     task_id: str = "easy"
     submission: Dict[str, Any] = {}
     ground_truth: Dict[str, Any] = {}
 
-
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health")
 def health():
-    return HealthResponse(status="ok", version="1.0.0")
+    return {"status": "healthy", "version": "1.0.0"}
 
+@app.get("/metadata")
+def metadata():
+    return {
+        "name": "support-ticket-triage-env",
+        "description": "Real-world AI Support Ticket Triage agent environment for OpenEnv",
+        "version": "1.0.0",
+        "author": "Naveen2304",
+    }
+
+@app.get("/schema")
+def schema():
+    return {
+        "action": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string"},
+                "parameters": {"type": "object"}
+            }
+        },
+        "observation": {
+            "type": "object",
+            "properties": {
+                "ticket": {"type": "object"},
+                "message": {"type": "string"}
+            }
+        },
+        "state": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "current_step": {"type": "integer"},
+                "done": {"type": "boolean"}
+            }
+        }
+    }
 
 @app.get("/tasks")
 def tasks():
     return {"tasks": TASK_LIST}
-
 
 @app.get("/state")
 def state():
@@ -44,7 +76,6 @@ def state():
         "episode_reward": env.episode_reward,
     }
 
-
 @app.post("/reset", response_model=ResetResponse)
 def reset(request: Optional[ResetRequest] = None):
     env = get_env()
@@ -52,7 +83,6 @@ def reset(request: Optional[ResetRequest] = None):
     seed = request.seed if request else 42
     result = env.reset(task_id, seed)
     return ResetResponse(observation=result["observation"], info=result["info"])
-
 
 @app.post("/step", response_model=StepResponse)
 def step(request: StepRequest):
@@ -65,7 +95,6 @@ def step(request: StepRequest):
         info=result["info"],
     )
 
-
 @app.post("/grade")
 def grade_endpoint(request: GradeRequest):
     """Grade a submission for a given task. Score is strictly between 0 and 1."""
@@ -75,9 +104,9 @@ def grade_endpoint(request: GradeRequest):
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
-
 @app.post("/grade/easy")
 def grade_easy_endpoint(request: Optional[GradeRequest] = None):
+    """Grade a submission for the easy task."""
     try:
         sub = request.submission if request else {}
         gt = request.ground_truth if request else {}
@@ -86,14 +115,15 @@ def grade_easy_endpoint(request: Optional[GradeRequest] = None):
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
-
 @app.get("/grade/easy")
 def grade_easy_get():
-    return {"score": 0.001, "reward": 0.001, "task_id": "easy"}
-
+    """Grade easy task with defaults (for validation)."""
+    score = 0.001
+    return {"score": score, "reward": score, "task_id": "easy"}
 
 @app.post("/grade/medium")
 def grade_medium_endpoint(request: Optional[GradeRequest] = None):
+    """Grade a submission for the medium task."""
     try:
         sub = request.submission if request else {}
         gt = request.ground_truth if request else {}
@@ -102,14 +132,15 @@ def grade_medium_endpoint(request: Optional[GradeRequest] = None):
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
-
 @app.get("/grade/medium")
 def grade_medium_get():
-    return {"score": 0.001, "reward": 0.001, "task_id": "medium"}
-
+    """Grade medium task with defaults (for validation)."""
+    score = 0.001
+    return {"score": score, "reward": score, "task_id": "medium"}
 
 @app.post("/grade/hard")
 def grade_hard_endpoint(request: Optional[GradeRequest] = None):
+    """Grade a submission for the hard task."""
     try:
         sub = request.submission if request else {}
         gt = request.ground_truth if request else {}
@@ -118,51 +149,11 @@ def grade_hard_endpoint(request: Optional[GradeRequest] = None):
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
-
 @app.get("/grade/hard")
 def grade_hard_get():
-    return {"score": 0.001, "reward": 0.001, "task_id": "hard"}
-
-
-@app.post("/baseline")
-def baseline_endpoint():
-    """Run the deterministic baseline agent for all tasks server-side."""
-    try:
-        from server.tasks import TICKETS
-        from server.graders import grade as _grade
-        import random
-
-        results = {}
-        for task_id in ["easy", "medium", "hard"]:
-            rng = random.Random(42)
-            ticket = rng.choice(TICKETS)
-            if task_id == "easy":
-                submission = {
-                    "category": ticket["category"],
-                    "priority": ticket["priority"],
-                }
-            elif task_id == "medium":
-                submission = {
-                    "category": ticket["category"],
-                    "priority": ticket["priority"],
-                    "team": ticket["team"],
-                    "sla": ticket["sla"],
-                }
-            else:
-                submission = {
-                    "category": ticket["category"],
-                    "priority": ticket["priority"],
-                    "team": ticket["team"],
-                    "sla": ticket["sla"],
-                    "summary": ticket["summary"],
-                    "response": ticket["response"],
-                }
-            score = _grade(task_id, submission, ticket)
-            results[task_id] = {"score": score, "submission": submission}
-        return {"results": results}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
+    """Grade hard task with defaults (for validation)."""
+    score = 0.001
+    return {"score": score, "reward": score, "task_id": "hard"}
 
 @app.get("/")
 def root():
@@ -170,14 +161,16 @@ def root():
         "name": "support-ticket-triage-env",
         "version": "1.0.0",
         "description": "Real-world AI Support Ticket Triage agent environment for OpenEnv",
-        "endpoints": ["/health", "/tasks", "/reset", "/step", "/state", "/grade", "/grade/easy", "/grade/medium", "/grade/hard", "/baseline"],
+        "endpoints": ["/health", "/metadata", "/schema", "/tasks", "/reset", "/step", "/state", "/grade", "/grade/easy", "/grade/medium", "/grade/hard"],
     }
 
-
 def main():
+    """
+    The entry point called by the 'server' script in pyproject.toml.
+    We use the app object directly to ensure the validator can call it.
+    """
     port = int(os.getenv("PORT", 7860))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
 
 if __name__ == "__main__":
     main()
