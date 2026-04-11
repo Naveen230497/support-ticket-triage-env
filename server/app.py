@@ -1,18 +1,24 @@
 """FastAPI application for the Support Ticket Triage Environment."""
-import uvicorn
-import os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, field_validator, Field
+from typing import Optional, Dict, Any
+from dataclasses import asdict
 import time
+import re
 from collections import defaultdict
-from server.environment import get_env
-from server.tasks import TASK_LIST, list_tasks
-from server.graders import grade, grade_easy, grade_medium, grade_hard
+from .environment import SupportTicketTriageEnvironment
+from .tasks import list_tasks
+from .graders import grade
 
-VALID_TASK_IDS = {"easy", "medium", "hard"}
+VALID_TASK_IDS = {"task_easy", "task_medium", "task_hard"}
+VALID_ACTION_TYPES = {
+    "set_category", "set_priority", "assign_team",
+    "add_tag", "set_resolution_time", "merge_duplicate",
+    "escalate", "mark_resolved",
+}
+
 
 class RateLimiter:
     def __init__(self, requests_per_minute: int = 100):
@@ -27,11 +33,27 @@ class RateLimiter:
         self.log[client_id].append(now)
         return True
 
+
 rate_limiter = RateLimiter()
+
+
+def sanitize_string(value: str, max_length: int = 500) -> str:
+    if not value:
+        return ""
+    cleaned = re.sub(r'[<>"\\;{}]', "", str(value))
+    return cleaned[:max_length]
+
+
+env = SupportTicketTriageEnvironment()
+env.reset("task_easy")
 
 app = FastAPI(
     title="Support Ticket Triage Environment",
-    description="OpenEnv-compatible support ticket triage environment",
+    description=(
+        "Real-world support ticket triage environment for AI agents. "
+        "Agents read support tickets and fix triage issues such as wrong category, "
+        "missing priority, unassigned team, unresolved duplicates, and required escalations."
+    ),
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -42,7 +64,9 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-RateLimit-Remaining"],
 )
+
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
@@ -55,20 +79,55 @@ async def rate_limit_middleware(request: Request, call_next):
         )
     return await call_next(request)
 
+
 class ResetRequest(BaseModel):
-    task_id: Optional[str] = "easy"
-    seed: Optional[int] = 42
+    task_id: Optional[str] = Field(default="task_easy", pattern=r"^task_(easy|medium|hard)$")
+
+    @field_validator("task_id")
+    @classmethod
+    def validate_task_id(cls, v):
+        if v not in VALID_TASK_IDS:
+            raise ValueError(f"Invalid task_id. Allowed: {sorted(VALID_TASK_IDS)}")
+        return v
+
 
 class StepRequest(BaseModel):
-    action: str
-    parameters: Optional[Dict[str, Any]] = {}
+    action_type: str = Field(..., pattern=r"^(set_category|set_priority|assign_team|add_tag|set_resolution_time|merge_duplicate|escalate|mark_resolved)$")
+    value: Optional[str] = Field(None, max_length=500)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    @field_validator("action_type")
+    @classmethod
+    def validate_action_type(cls, v):
+        if v not in VALID_ACTION_TYPES:
+            raise ValueError(f"Invalid action_type. Allowed: {sorted(VALID_ACTION_TYPES)}")
+        return v
+
+    @field_validator("value")
+    @classmethod
+    def sanitize_value(cls, v):
+        return sanitize_string(v) if v else None
+
 
 class GraderRequest(BaseModel):
-    task_id: str
-    submission: Optional[Dict[str, Any]] = {}
-    ground_truth: Optional[Dict[str, Any]] = {}
+    task_id: str = Field(..., pattern=r"^task_(easy|medium|hard)$")
 
-@app.get("/")
+
+def obs_to_dict(obs):
+    try:
+        return asdict(obs)
+    except Exception:
+        return obs.__dict__ if hasattr(obs, "__dict__") else str(obs)
+
+
+def state_to_dict(s):
+    try:
+        return asdict(s)
+    except Exception:
+        return s.__dict__ if hasattr(s, "__dict__") else str(s)
+
+
+@app.get("/", tags=["Info"])
 def root():
     return {
         "service": "Support Ticket Triage Environment API",
@@ -85,179 +144,131 @@ def root():
         },
     }
 
-@app.get("/health")
+
+@app.get("/health", tags=["Health"])
 def health():
-    return {"status": "healthy", "version": "2.0.0"}
-
-@app.get("/metadata")
-def metadata():
     return {
-        "name": "support-ticket-triage-env",
-        "description": "Real-world AI Support Ticket Triage agent environment for OpenEnv",
+        "status": "ok",
+        "env": "support-ticket-triage-env",
         "version": "2.0.0",
-        "author": "Naveen2304",
     }
 
-@app.get("/schema")
-def schema():
-    return {
-        "action": {
-            "type": "object",
-            "properties": {
-                "action": {"type": "string", "enum": ["read_ticket", "set_field", "submit"]},
-                "parameters": {"type": "object"}
-            }
-        },
-        "observation": {
-            "type": "object",
-            "properties": {
-                "ticket_id": {"type": "string"},
-                "subject": {"type": "string"},
-                "body": {"type": "string"},
-                "task": {"type": "string"},
-                "required_fields": {"type": "array"},
-                "reward": {"type": "number"},
-                "done": {"type": "boolean"},
-                "task_id": {"type": "string"}
-            }
-        },
-        "state": {
-            "type": "object",
-            "properties": {
-                "task_id": {"type": "string"},
-                "current_step": {"type": "integer"},
-                "done": {"type": "boolean"},
-                "episode_reward": {"type": "number"}
-            }
-        },
-    }
 
-@app.get("/tasks")
-def tasks():
-    """List all available tasks - returns flat list for OpenEnv compatibility."""
-    return list_tasks()
-
-@app.post("/reset")
-def reset(request: Optional[ResetRequest] = None):
-    env = get_env()
-    task_id = request.task_id if request else "easy"
-    seed = request.seed if request else 42
-    if task_id not in VALID_TASK_IDS:
-        raise HTTPException(status_code=400, detail=f"Invalid task_id. Valid: {sorted(VALID_TASK_IDS)}")
+@app.post("/reset", tags=["Environment"])
+def reset(req: ResetRequest = None):
+    """Reset the environment to the start of a new episode."""
+    task_id = (req.task_id if req else None) or "task_easy"
     try:
-        result = env.reset(task_id, seed)
-        return result
+        obs = env.reset(task_id=task_id)
+        return {"observation": obs_to_dict(obs)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Reset failed: {e}")
 
-@app.post("/step")
-def step(request: StepRequest):
-    env = get_env()
+
+@app.post("/step", tags=["Environment"])
+def step(req: StepRequest):
+    """Submit one action and advance the episode by one step."""
     try:
-        result = env.step(request.action, request.parameters or {})
-        return result
+        class Action:
+            pass
+
+        action = Action()
+        action.action_type = req.action_type
+        action.value = req.value
+        action.confidence = req.confidence
+
+        obs = env.step(action)
+        return {
+            "observation": obs_to_dict(obs),
+            "reward": obs.reward,
+            "done": obs.done,
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Step failed: {e}")
 
-@app.get("/state")
-def state():
-    env = get_env()
-    return {
-        "task_id": env.task_config["task_id"] if env.task_config else None,
-        "current_step": env.current_step,
-        "done": env.done,
-        "submission": env.submission,
-        "episode_reward": env.episode_reward,
-    }
 
-@app.post("/grader")
-def grader(request: GraderRequest):
-    """Grade the current submission."""
+@app.get("/state", tags=["Environment"])
+def state():
+    """Return the current episode state."""
+    return {"state": state_to_dict(env.state)}
+
+
+@app.get("/tasks", tags=["Environment"])
+def tasks():
+    """List all available tasks and the action schema."""
+    return {"tasks": list_tasks()}
+
+
+@app.post("/grader", tags=["Grading"])
+def grader(req: GraderRequest):
+    """Grade the current episode state for a given task."""
     try:
-        task_id = request.task_id
-        if task_id not in VALID_TASK_IDS:
-            raise HTTPException(status_code=400, detail=f"Invalid task_id: {task_id}")
-        submission = request.submission or {}
-        ground_truth = request.ground_truth or {}
-        score = grade(task_id, submission, ground_truth)
-        return {"task_id": task_id, "score": score, "reward": score}
-    except HTTPException:
-        raise
+        snapshot = env.get_episode_snapshot()
+        score = grade(req.task_id, snapshot)
+        return {
+            "task_id": req.task_id,
+            "score": score,
+            "snapshot": snapshot,
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Grading failed: {e}")
 
-@app.post("/baseline")
+
+@app.post("/baseline", tags=["Grading"])
 def baseline():
     """Run a deterministic baseline agent across all tasks and return scores."""
-    env = get_env()
+    baseline_plans = {
+        "task_easy": [
+            {"action_type": "set_category", "value": "account_access"},
+            {"action_type": "set_priority", "value": "high"},
+            {"action_type": "mark_resolved"},
+        ],
+        "task_medium": [
+            {"action_type": "set_category", "value": "billing"},
+            {"action_type": "set_priority", "value": "high"},
+            {"action_type": "assign_team", "value": "billing_team"},
+            {"action_type": "add_tag", "value": "refund"},
+            {"action_type": "set_resolution_time", "value": "4"},
+            {"action_type": "mark_resolved"},
+        ],
+        "task_hard": [
+            {"action_type": "set_category", "value": "technical"},
+            {"action_type": "set_priority", "value": "critical"},
+            {"action_type": "assign_team", "value": "tech_support"},
+            {"action_type": "merge_duplicate"},
+            {"action_type": "escalate"},
+            {"action_type": "set_resolution_time", "value": "2"},
+            {"action_type": "mark_resolved"},
+        ],
+    }
+
     results = {}
-    try:
-        env.reset("easy", 42)
-        env.step("submit", {"category": "authentication", "priority": "high"})
-        score = grade("easy", env.submission, env.task_config["ticket"])
-        results["easy"] = {"score": score, "status": "success"}
-    except Exception as e:
-        results["easy"] = {"score": 0.0, "status": "error", "error": str(e)}
-    try:
-        env.reset("medium", 42)
-        env.step("submit", {"category": "authentication", "priority": "high", "team": "identity", "sla": "P1"})
-        score = grade("medium", env.submission, env.task_config["ticket"])
-        results["medium"] = {"score": score, "status": "success"}
-    except Exception as e:
-        results["medium"] = {"score": 0.0, "status": "error", "error": str(e)}
-    try:
-        env.reset("hard", 42)
-        env.step("submit", {
-            "category": "authentication",
-            "priority": "high",
-            "team": "identity",
-            "sla": "P1",
-            "summary": "User unable to login after password reset",
-            "response": "We apologize for the inconvenience. Our identity team is investigating your login issue and will resolve it within 2 hours."
-        })
-        score = grade("hard", env.submission, env.task_config["ticket"])
-        results["hard"] = {"score": score, "status": "success"}
-    except Exception as e:
-        results["hard"] = {"score": 0.0, "status": "error", "error": str(e)}
+    for task_id, plan in baseline_plans.items():
+        try:
+            env.reset(task_id=task_id)
+            for entry in plan:
+                class Action:
+                    pass
+                act = Action()
+                act.action_type = entry["action_type"]
+                act.value = entry.get("value")
+                act.confidence = 1.0
+                env.step(act)
+            snapshot = env.get_episode_snapshot()
+            score = grade(task_id, snapshot)
+            results[task_id] = {"score": score, "status": "success"}
+        except Exception as e:
+            results[task_id] = {"score": 0.0, "status": "error", "error": str(e)}
+
+    env.reset("task_easy")
     return {"baseline_scores": results}
 
-@app.post("/grade/easy")
-def grade_easy_endpoint(request: Optional[GraderRequest] = None):
-    sub = request.submission if request else {}
-    gt = request.ground_truth if request else {}
-    score = grade_easy(sub or {}, gt or {})
-    return {"score": score, "reward": score, "task_id": "easy"}
-
-@app.get("/grade/easy")
-def grade_easy_get():
-    return {"score": 0.001, "reward": 0.001, "task_id": "easy"}
-
-@app.post("/grade/medium")
-def grade_medium_endpoint(request: Optional[GraderRequest] = None):
-    sub = request.submission if request else {}
-    gt = request.ground_truth if request else {}
-    score = grade_medium(sub or {}, gt or {})
-    return {"score": score, "reward": score, "task_id": "medium"}
-
-@app.get("/grade/medium")
-def grade_medium_get():
-    return {"score": 0.001, "reward": 0.001, "task_id": "medium"}
-
-@app.post("/grade/hard")
-def grade_hard_endpoint(request: Optional[GraderRequest] = None):
-    sub = request.submission if request else {}
-    gt = request.ground_truth if request else {}
-    score = grade_hard(sub or {}, gt or {})
-    return {"score": score, "reward": score, "task_id": "hard"}
-
-@app.get("/grade/hard")
-def grade_hard_get():
-    return {"score": 0.001, "reward": 0.001, "task_id": "hard"}
 
 def main():
-    """Entry point for running the server."""
-    port = int(os.getenv("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    """Entry point for running the server directly."""
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=7860)
+
 
 if __name__ == "__main__":
     main()

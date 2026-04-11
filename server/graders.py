@@ -1,74 +1,84 @@
-from difflib import SequenceMatcher
+from typing import Dict, Any
 
-# Scores must be strictly between 0.0 and 1.0 (exclusive)
-_MIN_SCORE = 0.001
-_MAX_SCORE = 0.999
-
-
-def _clamp(score: float) -> float:
-    """Clamp score to strictly (0, 1) - never exactly 0.0 or 1.0."""
-    return max(_MIN_SCORE, min(_MAX_SCORE, round(float(score), 4)))
+SCORE_MIN = 0.05
+SCORE_MAX = 0.95
 
 
-def _similarity(a: str, b: str) -> float:
-    """String similarity ratio between 0.0 and 1.0."""
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+def clamp(score: float) -> float:
+    return max(SCORE_MIN, min(SCORE_MAX, round(float(score), 4)))
 
 
-def grade_easy(submission: dict, ground_truth: dict) -> float:
-    """Grade category + priority. 0.5 each. Returns value strictly in (0, 1)."""
-    score = _MIN_SCORE
-    gt_category = ground_truth.get("category", "").lower()
-    gt_priority = ground_truth.get("priority", "").lower()
-    if gt_category and submission.get("category", "").lower() == gt_category:
-        score += 0.499
-    if gt_priority and submission.get("priority", "").lower() == gt_priority:
-        score += 0.499
-    return _clamp(score)
+def grade_easy(episode: Dict[str, Any]) -> float:
+    """Score based on whether category and priority are correctly set.
+    0.5 per correct field (max 1.0).
+    """
+    ticket = episode.get("current_ticket", {})
+    score = 0.0
+
+    if ticket.get("current_category", "").strip().lower() == "account_access":
+        score += 0.5
+    if ticket.get("current_priority", "").strip().lower() == "high":
+        score += 0.5
+
+    return clamp(score)
 
 
-def grade_medium(submission: dict, ground_truth: dict) -> float:
-    """Grade category + priority + team + sla. 0.25 each. Returns value strictly in (0, 1)."""
-    score = _MIN_SCORE
-    fields = [("category", 0.249), ("priority", 0.249), ("team", 0.249), ("sla", 0.249)]
-    for field, weight in fields:
-        gt_val = ground_truth.get(field, "").lower()
-        if gt_val and submission.get(field, "").lower() == gt_val:
-            score += weight
-    return _clamp(score)
+def grade_medium(episode: Dict[str, Any]) -> float:
+    """Score based on 5 fields. 0.20 per correct field (max 1.0)."""
+    ticket = episode.get("current_ticket", {})
+    score = 0.0
+
+    if ticket.get("current_category", "").strip().lower() == "billing":
+        score += 0.20
+    if ticket.get("current_priority", "").strip().lower() == "high":
+        score += 0.20
+    if ticket.get("assigned_team", "").strip().lower() == "billing_team":
+        score += 0.20
+    if "refund" in [t.lower() for t in ticket.get("tags", [])]:
+        score += 0.20
+    res_time = ticket.get("resolution_time_hours", 0.0)
+    if 0 < res_time <= 8.0:
+        score += 0.20
+
+    return clamp(score)
 
 
-def grade_hard(submission: dict, ground_truth: dict) -> float:
-    """Grade all fields. Exact match fields 0.15 each; summary + response use similarity."""
-    score = _MIN_SCORE
-    exact_fields = [("category", 0.149), ("priority", 0.149), ("team", 0.149), ("sla", 0.149)]
-    for field, weight in exact_fields:
-        gt_val = ground_truth.get(field, "").lower()
-        if gt_val and submission.get(field, "").lower() == gt_val:
-            score += weight
+def grade_hard(episode: Dict[str, Any]) -> float:
+    """Score based on 6 issues. 1/6 per resolved issue (max 1.0)."""
+    ticket = episode.get("current_ticket", {})
+    merged = episode.get("duplicate_merged", False)
+    escalated = ticket.get("escalated", False)
 
-    # Summary similarity (max ~0.2)
-    gt_summary = ground_truth.get("summary", "")
-    summary_sim = _similarity(submission.get("summary", ""), gt_summary)
-    score += summary_sim * 0.199
+    weight = 1.0 / 6.0
+    score = 0.0
 
-    # Response similarity (max ~0.2)
-    gt_response = ground_truth.get("response", "")
-    response_sim = _similarity(submission.get("response", ""), gt_response)
-    score += response_sim * 0.199
+    if ticket.get("current_category", "").strip().lower() == "technical":
+        score += weight
+    if ticket.get("current_priority", "").strip().lower() == "critical":
+        score += weight
+    if ticket.get("assigned_team", "").strip().lower() == "tech_support":
+        score += weight
+    if merged:
+        score += weight
+    if escalated:
+        score += weight
+    res_time = ticket.get("resolution_time_hours", 0.0)
+    if 0 < res_time <= 4.0:
+        score += weight
 
-    return _clamp(score)
+    return clamp(score)
 
 
-def grade(task_id: str, submission: dict, ground_truth: dict) -> float:
-    """Grade a submission for a given task. Always returns strictly (0, 1)."""
-    if task_id == "easy":
-        return grade_easy(submission, ground_truth)
-    elif task_id == "medium":
-        return grade_medium(submission, ground_truth)
-    elif task_id == "hard":
-        return grade_hard(submission, ground_truth)
-    else:
-        raise ValueError(f"Unknown task_id: {task_id}")
+GRADERS: Dict[str, Any] = {
+    "task_easy": grade_easy,
+    "task_medium": grade_medium,
+    "task_hard": grade_hard,
+}
+
+
+def grade(task_id: str, episode: Dict[str, Any]) -> float:
+    """Dispatch grading to the correct task grader."""
+    grader_fn = GRADERS.get(task_id)
+    if grader_fn is None:
+        raise ValueError(f"No grader registered for task_id: {task_id!r}")
+    return grader_fn(episode)

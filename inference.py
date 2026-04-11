@@ -2,10 +2,10 @@
 inference.py - LLM-based agent for the Support Ticket Triage Environment.
 
 Required by hackathon rules:
-- Uses the OpenAI client
-- Reads configuration from environment variables
-- Must be named inference.py and placed at the repo root
-- Emits structured [START], [STEP], [END] log lines in plain text
+  - Uses the OpenAI client
+  - Reads configuration from environment variables
+  - Must be named inference.py and placed at the repo root
+  - Emits structured [START], [STEP], [END] log lines in plain text
 """
 import os
 import sys
@@ -24,45 +24,48 @@ BENCHMARK = "support-ticket-triage-env"
 SUCCESS_THRESHOLD = 0.5
 
 TASKS = [
-    {"id": "easy", "max_steps": 5},
-    {"id": "medium", "max_steps": 8},
-    {"id": "hard", "max_steps": 12},
+    {"id": "task_easy", "max_steps": 8},
+    {"id": "task_medium", "max_steps": 20},
+    {"id": "task_hard", "max_steps": 30},
 ]
 
-SYSTEM_PROMPT = """You are a customer support triage expert.
-You receive a JSON observation describing a support ticket.
+SYSTEM_PROMPT = """You are a customer support ticket triage specialist agent.
+You receive a JSON observation describing a support ticket with triage issues.
 Return a single JSON action object with these fields:
-  action: one of [read_ticket, set_field, submit]
-  parameters: object with relevant fields
+  action_type: one of [set_category, set_priority, assign_team, add_tag, set_resolution_time, merge_duplicate, escalate, mark_resolved]
+  value: string (required for set_category, set_priority, assign_team, add_tag, set_resolution_time)
+  confidence: float between 0.0 and 1.0
 
-For 'set_field': parameters = {"field": "<fieldname>", "value": "<value>"}
-For 'submit': parameters = {"category": "...", "priority": "...", ...}
-
-Available fields: category, priority, team, sla, summary, response
-Category values: authentication, billing, bug, how-to, integration
-Priority values: low, medium, high, critical
-Team values: identity, finance, mobile, support, integrations
-SLA values: P1, P2, P3
+Valid values:
+- Categories: billing, technical, account_access, product_feedback, shipping
+- Priorities: low, medium, high, critical
+- Teams: billing_team, tech_support, account_team, product_team, logistics
+- Tags: refund, outage, payment, security, escalation
+- Resolution time: number of hours as string (e.g. "4" for 4 hours)
 
 Return ONLY valid JSON. No explanation, no markdown, no code fences."""
 
+
 def log_start(task: str, env: str, model: str):
     print(f"[START] task={task} env={env} model={model}", flush=True)
+
 
 def log_step(step: int, action: str, reward: float, done: bool, error=None):
     error_str = "null" if error is None else str(error).replace(" ", "_")[:50]
     print(f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={error_str}", flush=True)
 
+
 def log_end(success: bool, steps: int, score: float, rewards: list):
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}", flush=True)
+
 
 def call_llm(observation: dict) -> dict:
     obs_text = json.dumps(observation, indent=2)
     try:
         response = client.chat.completions.create(
             model=MODEL_NAME,
-            max_tokens=300,
+            max_tokens=200,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Current observation:\n{obs_text}\n\nWhat action do you take?"},
@@ -72,16 +75,15 @@ def call_llm(observation: dict) -> dict:
         raw = raw.replace("```json", "").replace("```", "").strip()
         return json.loads(raw)
     except Exception:
-        return {"action": "submit", "parameters": {"category": "bug", "priority": "medium"}}
+        return {"action_type": "mark_resolved", "confidence": 0.5}
+
 
 def format_action_str(action: dict) -> str:
-    act = action.get("action", "unknown")
-    params = action.get("parameters", {})
-    if act == "set_field":
-        return f"set_field({params.get('field', '')},{params.get('value', '')})"
-    if act == "submit":
-        return f"submit({','.join(f'{k}={v}' for k,v in params.items())})"
-    return f"{act}()"
+    atype = action.get("action_type", "unknown")
+    if atype in ("set_category", "set_priority", "assign_team", "add_tag", "set_resolution_time"):
+        return f"{atype}({action.get('value', '')})"
+    return f"{atype}()"
+
 
 def run_task(task_id: str, max_steps: int) -> float:
     rewards = []
@@ -90,13 +92,11 @@ def run_task(task_id: str, max_steps: int) -> float:
     success = False
 
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
-
     try:
-        r = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id, "seed": 42}, timeout=30)
+        r = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id}, timeout=30)
         r.raise_for_status()
         result = r.json()
         obs = result.get("observation", result)
-        info = result.get("info", {})
         done = obs.get("done", False) if isinstance(obs, dict) else False
 
         for step in range(1, max_steps + 1):
@@ -104,22 +104,15 @@ def run_task(task_id: str, max_steps: int) -> float:
                 break
 
             error = None
-            action = {"action": "submit", "parameters": {}}
+            action = {"action_type": "mark_resolved", "confidence": 0.5}
             try:
                 action = call_llm(obs if isinstance(obs, dict) else {})
             except Exception as e:
                 error = str(e)
 
             action_str = format_action_str(action)
-            act_name = action.get("action", "submit")
-            act_params = action.get("parameters", {})
-
             try:
-                r = requests.post(
-                    f"{ENV_URL}/step",
-                    json={"action": act_name, "parameters": act_params},
-                    timeout=30
-                )
+                r = requests.post(f"{ENV_URL}/step", json=action, timeout=30)
                 r.raise_for_status()
                 result = r.json()
                 obs = result.get("observation", result)
@@ -138,13 +131,8 @@ def run_task(task_id: str, max_steps: int) -> float:
             if done:
                 break
 
-        # Get final score from /grader endpoint
         try:
-            r = requests.post(
-                f"{ENV_URL}/grader",
-                json={"task_id": task_id},
-                timeout=30
-            )
+            r = requests.post(f"{ENV_URL}/grader", json={"task_id": task_id}, timeout=30)
             r.raise_for_status()
             score = float(r.json().get("score", 0.0))
             score = min(max(score, 0.0), 1.0)
@@ -163,6 +151,7 @@ def run_task(task_id: str, max_steps: int) -> float:
 
     return score
 
+
 def main():
     results = {}
     for task in TASKS:
@@ -176,6 +165,7 @@ def main():
     avg = sum(results.values()) / len(results) if results else 0.0
     print(f"[RESULT] average_score={avg:.4f}", flush=True)
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()

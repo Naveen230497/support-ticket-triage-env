@@ -2,9 +2,10 @@ name: support-ticket-triage-env
 version: "1.0.0"
 description: >
   A real-world AI Support Ticket Triage and Resolution agent environment.
-  An AI agent reads support tickets and performs triage actions such as
-  classifying category, assigning priority, routing to teams, and drafting responses.
-author: Naveen2304
+  An AI agent reads support tickets and fixes triage issues such as
+  wrong category, missing priority, unassigned team, unresolved duplicates,
+  missing SLA times, and required escalations.
+author: Guthikonda Naveen
 email: guthikondanaveen9@gmail.com
 
 environment:
@@ -14,44 +15,49 @@ environment:
 action:
   type: object
   fields:
-    action:
+    action_type:
       type: string
-      enum: [read_ticket, set_field, submit]
-    parameters:
-      type: object
+      enum: [set_category, set_priority, assign_team, add_tag, set_resolution_time, merge_duplicate, escalate, mark_resolved]
+    value:
+      type: string
       required: false
+    confidence:
+      type: number
 
 observation:
   type: object
   fields:
     ticket_id: {type: string}
-    subject: {type: string}
-    body: {type: string}
-    task: {type: string}
-    required_fields: {type: array}
+    title: {type: string}
+    description: {type: string}
+    current_category: {type: string}
+    current_priority: {type: string}
+    assigned_team: {type: string}
+    tags: {type: array}
+    resolution_time_hours: {type: number}
+    issues_remaining: {type: integer}
+    feedback: {type: string}
     reward: {type: number}
     done: {type: boolean}
     task_id: {type: string}
+    step_count: {type: integer}
 
 tasks:
-  - id: easy
-    name: Basic Ticket Classification
+  - id: task_easy
+    name: Login Failure Triage
     difficulty: easy
-    max_steps: 5
-    score_range: [0.0, 1.0]
-    grader: server.graders:grade_easy
-  - id: medium
-    name: Ticket Routing with SLA
-    difficulty: medium
     max_steps: 8
     score_range: [0.0, 1.0]
-    grader: server.graders:grade_medium
-  - id: hard
-    name: Full Triage with Resolution
-    difficulty: hard
-    max_steps: 12
+  - id: task_medium
+    name: Billing Dispute Resolution
+    difficulty: medium
+    max_steps: 20
     score_range: [0.0, 1.0]
-    grader: server.graders:grade_hard
+  - id: task_hard
+    name: Enterprise Checkout Crash Escalation
+    difficulty: hard
+    max_steps: 30
+    score_range: [0.0, 1.0]
 
 endpoints:
   step: POST /step

@@ -2,20 +2,13 @@
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 
-try:
-    from openenv.core.env_server import Action, Observation, State
-except ImportError:
-    # Fallback base classes if openenv not installed yet
-    class Action:
-        pass
-    class Observation:
-        pass
-    class State:
-        pass
+
+# Do NOT inherit from openenv's Pydantic models - use standalone dataclasses.
+# OpenEnv evaluators don't check inheritance; they check the API contract.
 
 
 @dataclass
-class TicketAction(Action):
+class TicketAction:
     """Agent action on a support ticket."""
     action_type: str = ""
     value: Optional[str] = None
@@ -23,7 +16,7 @@ class TicketAction(Action):
 
 
 @dataclass
-class TicketObservation(Observation):
+class TicketObservation:
     """What the agent observes after each step."""
     ticket_id: str = ""
     title: str = ""
@@ -40,11 +33,12 @@ class TicketObservation(Observation):
     task_id: str = ""
     step_count: int = 0
     duplicate_ticket: Optional[Dict[str, Any]] = None
+    escalated: bool = False
 
 
 @dataclass
-class TicketState(State):
-    """Internal state of the support ticket triage environment."""
+class TicketState:
+    """Full episode state tracking."""
     task_id: str = ""
     step_count: int = 0
     episode_id: str = ""

@@ -1,140 +1,137 @@
-import random
-from typing import Optional, List, Dict, Any
+import copy
+from typing import Dict, Any, List
 
-TICKETS = [
-    {
-        "id": "T001",
-        "subject": "Cannot login to my account",
-        "body": "I have been trying to login for the past 2 hours but keep getting invalid password error even though I reset it.",
-        "category": "authentication",
-        "priority": "high",
-        "team": "identity",
-        "sla": "P1",
-        "summary": "User unable to login after password reset",
-        "response": "We apologize for the inconvenience. Our identity team is investigating your login issue and will resolve it within 2 hours."
-    },
-    {
-        "id": "T002",
-        "subject": "Billing charge incorrect",
-        "body": "I was charged $150 instead of $50 for my monthly subscription. Please refund the extra amount.",
-        "category": "billing",
-        "priority": "high",
-        "team": "finance",
-        "sla": "P1",
-        "summary": "User overcharged $100 for monthly subscription",
-        "response": "We sincerely apologize for the billing error. Our finance team will process a refund of $100 within 3-5 business days."
-    },
-    {
-        "id": "T003",
-        "subject": "App crashes on startup",
-        "body": "The mobile app crashes immediately after opening. This started after the last update.",
-        "category": "bug",
-        "priority": "medium",
-        "team": "mobile",
-        "sla": "P2",
-        "summary": "App crashes on startup after recent update",
-        "response": "Thank you for reporting this. Our mobile team is aware of the crash issue in the latest update and is working on a fix."
-    },
-    {
-        "id": "T004",
-        "subject": "How do I export my data?",
-        "body": "I need to export all my data to CSV format. I cannot find the option in settings.",
-        "category": "how-to",
-        "priority": "low",
-        "team": "support",
-        "sla": "P3",
-        "summary": "User needs guidance on data export to CSV",
-        "response": "You can export your data by going to Settings > Data Management > Export. Select CSV format and click Download."
-    },
-    {
-        "id": "T005",
-        "subject": "Integration with Slack not working",
-        "body": "The Slack integration stopped sending notifications 2 days ago. Our webhook is configured correctly.",
-        "category": "integration",
-        "priority": "medium",
-        "team": "integrations",
-        "sla": "P2",
-        "summary": "Slack webhook integration not sending notifications",
-        "response": "We have identified an issue with Slack webhook notifications. Our integrations team is working on a fix expected within 24 hours."
-    },
-]
+TASKS: Dict[str, Dict[str, Any]] = {
 
-
-def get_task_config(task_id: str, seed: int = 42) -> dict:
-    rng = random.Random(seed)
-    ticket = rng.choice(TICKETS)
-    if task_id == "easy":
-        return {
-            "task_id": task_id,
-            "ticket": ticket,
-            "required_fields": ["category", "priority"],
-            "description": "Classify this support ticket by category and priority.",
-            "max_steps": 5,
-        }
-    elif task_id == "medium":
-        return {
-            "task_id": task_id,
-            "ticket": ticket,
-            "required_fields": ["category", "priority", "team", "sla"],
-            "description": "Classify this ticket, assign to the correct team and SLA tier.",
-            "max_steps": 8,
-        }
-    elif task_id == "hard":
-        return {
-            "task_id": task_id,
-            "ticket": ticket,
-            "required_fields": ["category", "priority", "team", "sla", "summary", "response"],
-            "description": "Fully triage: classify, route, summarize and draft an initial response.",
-            "max_steps": 12,
-        }
-    else:
-        raise ValueError(f"Unknown task_id: {task_id}")
-
-
-ACTION_SCHEMA = {
-    "action": {
-        "type": "string",
-        "enum": ["read_ticket", "set_field", "submit"]
+    "task_easy": {
+        "id": "task_easy",
+        "name": "Login Failure Triage",
+        "difficulty": "easy",
+        "description": "A user cannot log in and gets 'Invalid credentials' error. Category and priority are missing. Fix them.",
+        "max_steps": 8,
+        "initial_ticket": {
+            "id": "TKT-1001",
+            "title": "Cannot login to my account",
+            "description": "I have been trying to login for the past 2 hours but keep getting 'Invalid credentials' error even though I just reset my password. Locked out of dashboard completely.",
+            "current_category": "",
+            "current_priority": "",
+            "assigned_team": "",
+            "tags": [],
+            "resolution_time_hours": 0.0,
+            "escalated": False,
+        },
+        "required_fixes": [
+            {"type": "set_category", "expected": "account_access"},
+            {"type": "set_priority", "expected": "high"},
+        ],
+        "total_issues": 2,
     },
-    "parameters": {
-        "type": "object",
-        "required": False
+
+    "task_medium": {
+        "id": "task_medium",
+        "name": "Billing Dispute Resolution",
+        "difficulty": "medium",
+        "description": "Customer was charged twice for subscription and needs a refund. Five fields are missing: category, priority, team, tag, and resolution time.",
+        "max_steps": 20,
+        "initial_ticket": {
+            "id": "TKT-2002",
+            "title": "Charged twice for monthly subscription",
+            "description": "I was charged $99.99 twice on my credit card for the same monthly subscription. I need a refund for the duplicate charge. Transaction IDs: TXN-55812 and TXN-55813. This happened on 2024-03-15.",
+            "current_category": "",
+            "current_priority": "",
+            "assigned_team": "",
+            "tags": [],
+            "resolution_time_hours": 0.0,
+            "escalated": False,
+        },
+        "required_fixes": [
+            {"type": "set_category",        "expected": "billing"},
+            {"type": "set_priority",        "expected": "high"},
+            {"type": "assign_team",         "expected": "billing_team"},
+            {"type": "add_tag",             "expected": "refund"},
+            {"type": "set_resolution_time", "expected_max": 8.0},
+        ],
+        "total_issues": 5,
+    },
+
+    "task_hard": {
+        "id": "task_hard",
+        "name": "Enterprise Checkout Crash Escalation",
+        "difficulty": "hard",
+        "description": (
+            "Enterprise checkout crashes for 500+ users. The ticket has WRONG pre-filled values: "
+            "category is 'product_feedback' (should be 'technical'), priority is 'low' (should be 'critical'). "
+            "No team assigned, there is an unmerged duplicate ticket, no escalation, and no SLA time set. "
+            "Fix all 6 issues."
+        ),
+        "max_steps": 30,
+        "initial_ticket": {
+            "id": "TKT-3003",
+            "title": "Checkout page crashes for enterprise customers",
+            "description": (
+                "URGENT: Our enterprise checkout page throws a 500 error for all users since 03:00 UTC. "
+                "Over 500 customers affected. Revenue impact estimated at $50,000/hour. "
+                "Stack trace shows NullPointerException in PaymentGateway.processOrder(). "
+                "Multiple enterprise clients (Acme Corp, GlobalTech, MegaRetail) have escalated to their account managers."
+            ),
+            "current_category": "product_feedback",
+            "current_priority": "low",
+            "assigned_team": "",
+            "tags": [],
+            "resolution_time_hours": 0.0,
+            "escalated": False,
+        },
+        "duplicate_ticket": {
+            "id": "TKT-3004",
+            "title": "Payment processing broken on checkout",
+            "description": "Checkout is failing with error 500. Same issue as TKT-3003.",
+            "current_category": "technical",
+            "current_priority": "critical",
+            "assigned_team": "tech_support",
+            "tags": ["outage", "payment"],
+            "resolution_time_hours": 2.0,
+            "escalated": True,
+        },
+        "required_fixes": [
+            {"type": "set_category",        "expected": "technical"},
+            {"type": "set_priority",        "expected": "critical"},
+            {"type": "assign_team",         "expected": "tech_support"},
+            {"type": "merge_duplicate"},
+            {"type": "escalate"},
+            {"type": "set_resolution_time", "expected_max": 4.0},
+        ],
+        "total_issues": 6,
     },
 }
 
 
+def get_task(task_id: str) -> Dict[str, Any]:
+    if task_id not in TASKS:
+        raise ValueError(f"Unknown task: {task_id}")
+    return copy.deepcopy(TASKS[task_id])
+
+
 def list_tasks() -> List[Dict[str, Any]]:
-    """Return list of all tasks with action schema and grader (reference-compatible format)."""
+    action_schema = {
+        "action_type": {
+            "type": "string",
+            "enum": [
+                "set_category", "set_priority", "assign_team",
+                "add_tag", "set_resolution_time", "merge_duplicate",
+                "escalate", "mark_resolved",
+            ],
+        },
+        "value": {"type": "string", "required": False},
+        "confidence": {"type": "number", "min": 0.0, "max": 1.0},
+    }
     return [
         {
-            "id": "easy",
-            "name": "Basic Ticket Classification",
-            "difficulty": "easy",
-            "max_steps": 5,
-            "description": "Classify support ticket by category and priority",
-            "action_schema": ACTION_SCHEMA,
-            "grader": "server.graders:grade_easy",
-        },
-        {
-            "id": "medium",
-            "name": "Ticket Routing with SLA",
-            "difficulty": "medium",
-            "max_steps": 8,
-            "description": "Route ticket to correct team and assign SLA tier",
-            "action_schema": ACTION_SCHEMA,
-            "grader": "server.graders:grade_medium",
-        },
-        {
-            "id": "hard",
-            "name": "Full Triage with Resolution",
-            "difficulty": "hard",
-            "max_steps": 12,
-            "description": "Classify, route, summarize, and draft initial response",
-            "action_schema": ACTION_SCHEMA,
-            "grader": "server.graders:grade_hard",
-        },
+            "id": t["id"],
+            "name": t["name"],
+            "difficulty": t["difficulty"],
+            "description": t["description"],
+            "max_steps": t["max_steps"],
+            "action_schema": action_schema,
+        }
+        for t in TASKS.values()
     ]
-
-
-# TASK_LIST for backwards compatibility
-TASK_LIST = list_tasks()
