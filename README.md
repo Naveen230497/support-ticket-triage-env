@@ -5,7 +5,7 @@
 
 ## Overview
 
-A real-world [OpenEnv](https://github.com/meta-pytorch/OpenEnv) environment where an AI agent acts as a **customer support triage specialist**. The agent reads incoming support tickets and fixes triage issues — wrong category, missing priority, unassigned team, unresolved duplicates, missing SLA times, and required escalations — simulating the actual workflow in enterprise SaaS support operations.
+A real-world [OpenEnv](https://github.com/meta-pytorch/OpenEnv) environment where an AI agent acts as a **customer support triage specialist**. The agent reads incoming support tickets and fixes triage issues wrong category, missing priority, unassigned team, unresolved duplicates, missing SLA times, and required escalations simulating the actual workflow in enterprise SaaS support operations.
 
 This environment is directly relevant to any team running a customer support desk, and fills a genuine gap in the OpenEnv ecosystem (no support triage environment exists).
 
@@ -23,21 +23,21 @@ This environment is directly relevant to any team running a customer support des
 
 ## Tasks
 
-### Task 1 — Easy: Login Failure Triage
+### Task 1 - Easy: Login Failure Triage
 - **Ticket:** User cannot log in, gets "Invalid credentials" error
 - **Issues:** `category` and `priority` are missing (2 issues)
 - **Agent must:** Set category=`account_access`, priority=`high`
 - **Max steps:** 8
 - **Grader:** 0.5 per correct field (max 1.0)
 
-### Task 2 — Medium: Billing Dispute Resolution
+### Task 2 -  Medium: Billing Dispute Resolution
 - **Ticket:** Customer charged twice for subscription, needs refund
 - **Issues:** 5 fields missing — category, priority, team, tag, resolution time
 - **Agent must:** Set category=`billing`, priority=`high`, team=`billing_team`, tag=`refund`, resolution_time<=8h
 - **Max steps:** 20
 - **Grader:** 0.20 per correct field (max 1.0)
 
-### Task 3 — Hard: Enterprise Checkout Crash Escalation
+### Task 3 - Hard: Enterprise Checkout Crash Escalation
 - **Ticket:** Enterprise checkout crashes for 500 users — **WRONG** pre-filled values
 - **Issues:** 6 issues — wrong category (`product_feedback`→`technical`), wrong priority (`low`→`critical`), no team, unmerged duplicate, no escalation, no SLA time
 - **Agent must:** Correct all 6 issues including `merge_duplicate` and `escalate`
@@ -193,7 +193,7 @@ support-ticket-triage-env/
 
 ## License
 
-MIT — open for evaluation by the hackathon judges.
+MIT - open for evaluation by the hackathon judges.
 
 ## Submission
 
